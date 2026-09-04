@@ -1,0 +1,59 @@
+html { background: #123D2B; }
+    body {
+      min-width: 320px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    button, input { touch-action: manipulation; }
+    .touch-target { min-height: 56px; }
+    .no-select, .no-select * {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .safe-pad {
+      padding-left: max(1rem, env(safe-area-inset-left));
+      padding-right: max(1rem, env(safe-area-inset-right));
+      padding-top: max(1rem, env(safe-area-inset-top));
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+    .employee-card:focus-visible,
+    button:focus-visible {
+      outline: 3px solid #CFAE5C;
+      outline-offset: 3px;
+    }
+    .pin-dot {
+      width: 1rem;
+      height: 1rem;
+      border-radius: 9999px;
+      border: 2px solid #CFAE5C;
+      background: transparent;
+      transition: transform .15s ease, background-color .15s ease;
+    }
+    .pin-dot.filled {
+      background: #123D2B;
+      transform: scale(1.03);
+    }
+    .shake {
+      animation: shake .34s ease-in-out 0s 1;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-8px); }
+      40% { transform: translateX(8px); }
+      60% { transform: translateX(-6px); }
+      80% { transform: translateX(6px); }
+    }
+    .overlay-fade {
+      animation: fadeIn .16s ease-out both;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .modal-pop {
+      animation: pop .18s ease-out both;
+    }
+    @keyframes pop {
+      from { transform: translateY(14px) scale(.98); opacity: 0; }
+      to { transform: translateY(0) scale(1); opacity: 1; }
+    }
