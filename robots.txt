@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://debellisdylan5-lang.github.io/crescent-pointe-employee-scanner-pin-picker/sitemap.xml
