@@ -370,6 +370,29 @@
     </section>
   </main>
 
+  <div id="scanner-workspace" class="fixed inset-0 z-50 hidden flex-col bg-crescent-cream">
+    <div class="flex items-center justify-between gap-4 border-b border-crescent-green/10 bg-white px-4 py-4 shadow-panel sm:px-6">
+      <div class="min-w-0">
+        <p class="text-xs font-bold uppercase tracking-[.18em] text-crescent-gold">Scanner workspace</p>
+        <h2 id="scanner-employee-name" class="truncate text-2xl font-black text-crescent-green">Employee Name</h2>
+        <p id="scanner-status" class="mt-1 text-sm font-semibold text-slate-600" aria-live="polite">Scanner ready — scan member pass</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="start-scanner" type="button" class="touch-target rounded-xl border-2 border-crescent-green px-4 font-bold text-crescent-green hover:bg-crescent-green hover:text-white">Start Scanner</button>
+        <button id="switch-employee" type="button" class="touch-target rounded-xl border-2 border-slate-300 px-4 font-bold text-slate-700 hover:bg-slate-50">Back / Switch Employee</button>
+      </div>
+    </div>
+    <div class="grid flex-1 gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_420px]">
+      <div class="min-h-[18rem] overflow-hidden rounded-3xl border border-crescent-green/10 bg-white shadow-panel">
+        <iframe id="scanner-iframe" title="Employee scanner" class="h-full min-h-[18rem] w-full bg-white"></iframe>
+      </div>
+      <div class="rounded-3xl border border-crescent-gold/30 bg-[#fffaf0] p-5 shadow-panel">
+        <div id="scanner-message" class="min-h-24 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700" aria-live="polite">Scanner ready — scan member pass</div>
+        <input id="hid-capture-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="none" class="sr-only" aria-hidden="true">
+      </div>
+    </div>
+  </div>
+
   <div id="pin-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4 overlay-fade" role="dialog" aria-modal="true" aria-labelledby="pin-modal-title" aria-describedby="pin-modal-desc">
     <div class="modal-pop w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
       <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
