@@ -19,6 +19,20 @@ tailwind.config = {
       var attemptsByEmployee = {};
       var lockoutsByEmployee = {};
       var navigating = false;
+      var scannerWorkspace = document.getElementById('scanner-workspace');
+      var scannerEmployeeName = document.getElementById('scanner-employee-name');
+      var scannerStatus = document.getElementById('scanner-status');
+      var scannerMessage = document.getElementById('scanner-message');
+      var scannerIframe = document.getElementById('scanner-iframe');
+      var startScannerButton = document.getElementById('start-scanner');
+      var switchEmployeeButton = document.getElementById('switch-employee');
+      var hidCaptureInput = document.getElementById('hid-capture-input');
+      var scannerBuffer = '';
+      var scannerBufferTimer = null;
+      var scannerBusy = false;
+      var scannerLastValue = '';
+      var scannerLastAt = 0;
+      var scannerCurrentEmployee = null;
 
       var rosterGrid = document.getElementById('roster-grid');
       var loadingState = document.getElementById('loading-state');
@@ -61,6 +75,8 @@ tailwind.config = {
         selectedEmployee = employee;
         pinTitle.textContent = employee.name;
         resetPinUI();
+        scannerWorkspace.classList.add('hidden');
+        scannerWorkspace.classList.remove('flex');
         pinModal.classList.remove('hidden');
         pinModal.classList.add('flex');
         setTimeout(function() { pinInput.focus(); }, 50);
@@ -79,6 +95,69 @@ tailwind.config = {
       function stopLockoutTimers() {
         if (lockoutTimer) { clearTimeout(lockoutTimer); lockoutTimer = null; }
         if (lockoutTickTimer) { clearInterval(lockoutTickTimer); lockoutTickTimer = null; }
+      }
+
+      function setScannerStatus(msg) {
+        scannerStatus.textContent = msg;
+        scannerMessage.textContent = msg;
+      }
+
+      function escapeCssSelectorText(value) {
+        return String(value || '').replace(/["\\]/g, '\\$&');
+      }
+
+      function armHidCapture() {
+        if (hidCaptureInput) {
+          hidCaptureInput.value = '';
+          try { hidCaptureInput.focus({ preventScroll: true }); } catch (e) { hidCaptureInput.focus(); }
+        }
+        document.removeEventListener('keydown', handleScannerKeydown, true);
+        document.addEventListener('keydown', handleScannerKeydown, true);
+      }
+
+      function disarmHidCapture() {
+        document.removeEventListener('keydown', handleScannerKeydown, true);
+        if (scannerBufferTimer) { clearTimeout(scannerBufferTimer); scannerBufferTimer = null; }
+        scannerBuffer = '';
+      }
+
+      function resetScannerState(keepEmployee) {
+        scannerBusy = false;
+        scannerLastValue = '';
+        scannerLastAt = 0;
+        scannerBuffer = '';
+        if (scannerBufferTimer) { clearTimeout(scannerBufferTimer); scannerBufferTimer = null; }
+        if (!keepEmployee) scannerCurrentEmployee = null;
+        if (hidCaptureInput) hidCaptureInput.value = '';
+      }
+
+      function openScannerWorkspace(employee) {
+        scannerCurrentEmployee = employee;
+        selectedEmployee = employee;
+        pinModal.classList.add('hidden');
+        pinModal.classList.remove('flex');
+        pinTitle.textContent = employee.name;
+        scannerEmployeeName.textContent = employee.name;
+        scannerWorkspace.classList.remove('hidden');
+        scannerWorkspace.classList.add('flex');
+        setScannerStatus('Scanner ready — scan member pass');
+        resetScannerState(true);
+        loadScannerIframe(employee.scannerLink);
+        armHidCapture();
+      }
+
+      function closeScannerWorkspace() {
+        scannerWorkspace.classList.add('hidden');
+        scannerWorkspace.classList.remove('flex');
+        resetScannerState(false);
+        disarmHidCapture();
+        selectedEmployee = null;
+        scannerCurrentEmployee = null;
+        setScannerStatus('Scanner ready — scan member pass');
+      }
+
+      function loadScannerIframe(url) {
+        scannerIframe.src = url;
       }
 
       function renderRoster() {
@@ -270,8 +349,7 @@ tailwind.config = {
           if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Invalid scanner URL');
           navigating = true;
           setMessage('Opening ' + emp.name + '’s scanner…');
-          document.removeEventListener('keydown', handleKeydown);
-          window.location.assign(parsed.href);
+          openScannerWorkspace(emp);
         } catch (e) {
           setMessage('That scanner link is unavailable. Please contact a manager.');
           clearPin();
@@ -301,6 +379,121 @@ tailwind.config = {
         }
       }
 
+      function handleScannerKeydown(e) {
+        if (scannerWorkspace.classList.contains('hidden')) return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        var target = e.target;
+        var isEditable = target && (
+          target.isContentEditable ||
+          /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) ||
+          target.getAttribute('role') === 'textbox'
+        );
+        if (isEditable && target !== hidCaptureInput) return;
+
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finalizeScannerBuffer();
+          return;
+        }
+        if (e.key === 'Backspace') return;
+        if (e.key && e.key.length === 1) {
+          e.preventDefault();
+          queueScannerChar(e.key);
+        }
+      }
+
+      function queueScannerChar(ch) {
+        scannerBuffer += ch;
+        if (scannerBufferTimer) clearTimeout(scannerBufferTimer);
+        scannerBufferTimer = setTimeout(function() {
+          finalizeScannerBuffer();
+        }, 80);
+      }
+
+      function finalizeScannerBuffer() {
+        if (!scannerBuffer || scannerBusy) return;
+        var value = scannerBuffer;
+        scannerBuffer = '';
+        if (scannerBufferTimer) { clearTimeout(scannerBufferTimer); scannerBufferTimer = null; }
+        var now = Date.now();
+        if (value === scannerLastValue && (now - scannerLastAt) < 1500) return;
+        scannerLastValue = value;
+        scannerLastAt = now;
+        processScannerValue(value);
+      }
+
+      function findScannerControl(doc) {
+        if (!doc) return null;
+        var selectors = [
+          'input[type="text"]', 'input[type="search"]', 'input[type="tel"]', 'input:not([type])',
+          'textarea'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+          var inputs = doc.querySelectorAll(selectors[i]);
+          for (var j = 0; j < inputs.length; j++) {
+            var el = inputs[j];
+            if (el.disabled || el.type === 'hidden') continue;
+            var style = doc.defaultView && doc.defaultView.getComputedStyle ? doc.defaultView.getComputedStyle(el) : null;
+            var isUsable = el.offsetParent !== null || (style && style.position === 'fixed') || el.getClientRects().length > 0;
+            if (!isUsable) continue;
+            return el;
+          }
+        }
+        return null;
+      }
+
+      function clickPreferredAction(doc) {
+        var candidates = Array.prototype.slice.call(doc.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"]'));
+        var keywords = /submit|process|lookup|scan|apply|add points|continue|confirm/i;
+        for (var i = 0; i < candidates.length; i++) {
+          var el = candidates[i];
+          var text = (el.textContent || el.value || el.name || el.id || '').trim();
+          if (keywords.test(text)) {
+            el.click();
+            return true;
+          }
+        }
+        var forms = Array.prototype.slice.call(doc.querySelectorAll('form'));
+        for (var f = 0; f < forms.length; f++) {
+          var btn = forms[f].querySelector('button, input[type="submit"]');
+          if (btn) { btn.click(); return true; }
+        }
+        return false;
+      }
+
+      function processScannerValue(value) {
+        if (!scannerCurrentEmployee) return;
+        scannerBusy = true;
+        setScannerStatus('Submitting…');
+        var doc = scannerIframe.contentDocument;
+        if (!doc) {
+          scannerBusy = false;
+          setScannerStatus('Error — scanner page is not available in this frame.');
+          return;
+        }
+        var input = findScannerControl(doc);
+        if (!input) {
+          scannerBusy = false;
+          setScannerStatus('Error — manual scanner input could not be found.');
+          return;
+        }
+        input.focus();
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        if (!clickPreferredAction(doc)) {
+          scannerBusy = false;
+          setScannerStatus('Error — could not find a scan or submit control.');
+          return;
+        }
+        setTimeout(function() {
+          scannerBusy = false;
+          scannerBuffer = '';
+          setScannerStatus('Scan complete — ready for next member');
+          armHidCapture();
+        }, 600);
+      }
+
       document.querySelectorAll('.pin-key').forEach(function(btn) {
         btn.addEventListener('click', function() {
           var key = btn.getAttribute('data-key');
@@ -324,12 +517,34 @@ tailwind.config = {
         if (e.target === pinModal) closeModal();
       });
       retryButton.addEventListener('click', loadRoster);
+      startScannerButton.addEventListener('click', function() {
+        armHidCapture();
+        setScannerStatus('Scanner ready — scan member pass');
+      });
+      switchEmployeeButton.addEventListener('click', function() {
+        closeScannerWorkspace();
+        loadRoster();
+      });
+      scannerIframe.addEventListener('load', function() {
+        if (!scannerCurrentEmployee) return;
+        try {
+          var doc = scannerIframe.contentDocument;
+          if (doc) {
+            var style = doc.createElement('style');
+            style.textContent = 'button, [role="button"], a, input, textarea { -webkit-tap-highlight-color: transparent; }';
+            doc.head && doc.head.appendChild(style);
+          }
+        } catch (e) {}
+        armHidCapture();
+        setScannerStatus('Scanner ready — scan member pass');
+      });
 
       window.addEventListener('pageshow', function() {
         navigating = false;
         attemptsByEmployee = {};
         stopLockoutTimers();
         closeModal();
+        closeScannerWorkspace();
         clearPin();
         loadRoster();
       });
