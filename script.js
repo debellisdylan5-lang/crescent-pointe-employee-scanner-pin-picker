@@ -1,3 +1,7 @@
+if (location.hostname && location.hostname.endsWith('github.io')) {
+      location.replace('https://paymegpt.com/p/CC5humh');
+    }
+
 tailwind.config = {
       theme: {
         extend: {
