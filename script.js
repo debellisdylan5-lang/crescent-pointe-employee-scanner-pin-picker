@@ -44,7 +44,7 @@ tailwind.config = {
       var scannerLastValue = '';
       var scannerLastAt = 0;
       var scannerCurrentEmployee = null;
-      var fastSignupState = { nativeJoinUrl: '', fastUrl: '', employeeName: '', handler: null, observedDoc: null, retryTimers: [] };
+      var fastSignupState = { nativeJoinUrl: '', fastUrl: '', employeeName: '', handler: null, observedDoc: null, retryTimers: [], mutationObserver: null, installTimer: null, nativeModalSuppressed: false };
 
       var rosterGrid = document.getElementById('roster-grid');
       var loadingState = document.getElementById('loading-state');
@@ -182,6 +182,15 @@ tailwind.config = {
       function clearFastSignupState() {
         if (fastSignupState.handler && fastSignupState.observedDoc) {
           try { fastSignupState.observedDoc.removeEventListener('click', fastSignupState.handler, true); } catch (e) {}
+          try { fastSignupState.observedDoc.removeEventListener('pointerdown', fastSignupState.handler, true); } catch (e) {}
+          try { fastSignupState.observedDoc.removeEventListener('touchstart', fastSignupState.handler, true); } catch (e) {}
+        }
+        if (fastSignupState.mutationObserver) {
+          try { fastSignupState.mutationObserver.disconnect(); } catch (e) {}
+        }
+        if (fastSignupState.installTimer) {
+          clearTimeout(fastSignupState.installTimer);
+          fastSignupState.installTimer = null;
         }
         for (var i = 0; i < fastSignupState.retryTimers.length; i++) clearTimeout(fastSignupState.retryTimers[i]);
         fastSignupState.nativeJoinUrl = '';
@@ -190,6 +199,8 @@ tailwind.config = {
         fastSignupState.handler = null;
         fastSignupState.observedDoc = null;
         fastSignupState.retryTimers = [];
+        fastSignupState.mutationObserver = null;
+        fastSignupState.nativeModalSuppressed = false;
         if (fastSignupQr) fastSignupQr.removeAttribute('src');
         if (fastSignupLinkText) fastSignupLinkText.textContent = 'Waiting for link…';
       }
@@ -205,6 +216,50 @@ tailwind.config = {
         var html = decodeHtmlEntities(doc.documentElement ? doc.documentElement.outerHTML : '');
         var match = html.match(/https?:\/\/[^"'\\s<>]*\/wallet\/join\/[^"'\\s<>]*/i) || html.match(/\/wallet\/join\/[^"'\\s<>]*/i);
         return match ? match[0] : '';
+      }
+
+      function findNativeJoinUrlInNode(node) {
+        if (!node) return '';
+        if (node.nodeType === 1) {
+          var el = node;
+          var attrs = ['src', 'href', 'data-src', 'data', 'style', 'value', 'aria-label', 'title'];
+          for (var i = 0; i < attrs.length; i++) {
+            var val = el.getAttribute && el.getAttribute(attrs[i]);
+            if (val && /\/wallet\/join\//i.test(val)) {
+              var m = val.match(/https?:\/\/[^"'\\s<>]*\/wallet\/join\/[^"'\\s<>]*/i) || val.match(/\/wallet\/join\/[^"'\\s<>]*/i);
+              if (m) return m[0];
+            }
+          }
+          if (el.querySelectorAll) {
+            var matches = el.querySelectorAll('[href*="/wallet/join/"], [src*="/wallet/join/"], [data*="/wallet/join/"]');
+            for (var j = 0; j < matches.length; j++) {
+              var found = findNativeJoinUrlInNode(matches[j]);
+              if (found) return found;
+            }
+          }
+        } else if (node.nodeType === 3) {
+          var text = String(node.nodeValue || '');
+          var tm = text.match(/https?:\/\/[^"'\\s<>]*\/wallet\/join\/[^"'\\s<>]*/i) || text.match(/\/wallet\/join\/[^"'\\s<>]*/i);
+          if (tm) return tm[0];
+        }
+        return '';
+      }
+
+      function suppressNativeSignupUI(doc) {
+        if (!doc) return;
+        try {
+          var candidates = doc.querySelectorAll('button, a, [role="button"], [aria-label], [title], img, canvas, svg, input, textarea, div, section');
+          for (var i = 0; i < candidates.length; i++) {
+            var el = candidates[i];
+            var text = String((el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '')).trim();
+            var href = String(el.getAttribute && (el.getAttribute('href') || el.getAttribute('src') || el.getAttribute('data') || el.getAttribute('data-src') || '')).trim();
+            if (/new member sign-?up/i.test(text) || /\/wallet\/join\//i.test(text) || /\/wallet\/join\//i.test(href)) {
+              el.style.setProperty('display', 'none', 'important');
+              el.style.setProperty('visibility', 'hidden', 'important');
+              el.style.setProperty('pointer-events', 'none', 'important');
+            }
+          }
+        } catch (e) {}
       }
 
       function extractEmpParam(url) {
@@ -230,9 +285,15 @@ tailwind.config = {
         if (fastSignupQr) fastSignupQr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=12&data=' + encodeURIComponent(url);
       }
 
+      function setFastSignupError(message) {
+        if (fastSignupLinkText) fastSignupLinkText.textContent = message || 'Unable to generate fast sign-up link. Please use the native join page as fallback.';
+        if (fastSignupQr) fastSignupQr.removeAttribute('src');
+      }
+
       function openFastSignupModal(url) {
         if (!url) return;
         setFastSignupModal(url);
+        fastSignupState.nativeModalSuppressed = true;
         fastSignupModal.classList.remove('hidden');
         fastSignupModal.classList.add('flex');
       }
@@ -243,35 +304,109 @@ tailwind.config = {
       }
 
       function tryInstallFastSignupInterceptor(doc) {
-        if (!doc || doc === fastSignupState.observedDoc) {
-          if (fastSignupState.fastUrl) return;
+        if (!doc || fastSignupState.fastUrl && fastSignupState.observedDoc === doc) return;
+        if (!doc.body || !doc.documentElement) return;
+
+        if (fastSignupState.mutationObserver) {
+          try { fastSignupState.mutationObserver.disconnect(); } catch (e) {}
         }
-        var nativeJoinUrl = findNativeJoinUrlInDoc(doc);
-        if (!nativeJoinUrl) return;
-        var fastUrl = buildFastSignupUrl(nativeJoinUrl, scannerCurrentEmployee ? scannerCurrentEmployee.name : '');
-        fastSignupState.nativeJoinUrl = nativeJoinUrl;
-        fastSignupState.fastUrl = fastUrl;
-        fastSignupState.employeeName = scannerCurrentEmployee ? scannerCurrentEmployee.name : '';
+
         fastSignupState.observedDoc = doc;
-        setFastSignupModal(fastUrl);
+
+        function discoverAndOpen(reason) {
+          var nativeJoinUrl = findNativeJoinUrlInDoc(doc);
+          if (!nativeJoinUrl) return false;
+          var fastUrl = buildFastSignupUrl(nativeJoinUrl, scannerCurrentEmployee ? scannerCurrentEmployee.name : '');
+          fastSignupState.nativeJoinUrl = nativeJoinUrl;
+          fastSignupState.fastUrl = fastUrl;
+          fastSignupState.employeeName = scannerCurrentEmployee ? scannerCurrentEmployee.name : '';
+          suppressNativeSignupUI(doc);
+          setFastSignupModal(fastUrl);
+          openFastSignupModal(fastUrl);
+          return true;
+        }
 
         if (fastSignupState.handler) {
           try { doc.removeEventListener('click', fastSignupState.handler, true); } catch (e) {}
+          try { doc.removeEventListener('pointerdown', fastSignupState.handler, true); } catch (e) {}
+          try { doc.removeEventListener('touchstart', fastSignupState.handler, true); } catch (e) {}
         }
+
         fastSignupState.handler = function(e) {
-          var target = e.target && e.target.closest ? e.target.closest('button, a, [role="button"]') : null;
+          var target = e.target && e.target.closest ? e.target.closest('button, a, [role="button"], [aria-label], [title]') : null;
           if (!target) return;
-          var label = String((target.textContent || target.innerText || target.value || '')).trim();
+          var label = String((target.textContent || target.innerText || target.value || target.getAttribute('aria-label') || target.getAttribute('title') || '')).trim();
           if (!/new member sign-?up/i.test(label) && !/new member signup/i.test(label)) return;
-          e.preventDefault();
+          var activated = /^(pointerdown|touchstart|click)$/i.test(e.type);
+          if (!activated) return;
           e.stopImmediatePropagation();
-          openFastSignupModal(fastUrl);
+          if (e.type !== 'click') {
+            e.preventDefault();
+          }
+          var delays = [50, 150, 300, 600, 1000, 1500];
+          for (var i = 0; i < delays.length; i++) {
+            (function(delay) {
+              fastSignupState.retryTimers.push(setTimeout(function() {
+                if (discoverAndOpen('retry-' + delay)) return;
+              }, delay));
+            })(delays[i]);
+          }
         };
+
         doc.addEventListener('click', fastSignupState.handler, true);
+        doc.addEventListener('pointerdown', fastSignupState.handler, true);
+        doc.addEventListener('touchstart', fastSignupState.handler, true);
+
+        fastSignupState.mutationObserver = new MutationObserver(function(mutations) {
+          if (fastSignupState.nativeModalSuppressed) suppressNativeSignupUI(doc);
+          for (var i = 0; i < mutations.length; i++) {
+            var m = mutations[i];
+            if (m.type === 'childList') {
+              for (var j = 0; j < m.addedNodes.length; j++) {
+                var url = findNativeJoinUrlInNode(m.addedNodes[j]);
+                if (url) {
+                  fastSignupState.nativeJoinUrl = url;
+                  discoverAndOpen('mutation-child');
+                  return;
+                }
+              }
+            } else if (m.type === 'attributes') {
+              var attrUrl = findNativeJoinUrlInNode(m.target);
+              if (attrUrl) {
+                fastSignupState.nativeJoinUrl = attrUrl;
+                discoverAndOpen('mutation-attr');
+                return;
+              }
+            } else if (m.type === 'characterData') {
+              var textUrl = findNativeJoinUrlInNode(m.target);
+              if (textUrl) {
+                fastSignupState.nativeJoinUrl = textUrl;
+                discoverAndOpen('mutation-text');
+                return;
+              }
+            }
+          }
+          if (doc.querySelector('[href*="/wallet/join/"], [src*="/wallet/join/"], [data*="/wallet/join/"]')) {
+            discoverAndOpen('mutation-scan');
+          }
+        });
+
+        try {
+          fastSignupState.mutationObserver.observe(doc.documentElement, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            characterData: true,
+            attributeFilter: ['href', 'src', 'data', 'data-src', 'style', 'aria-label', 'title']
+          });
+        } catch (e) {}
+
+        discoverAndOpen('initial');
+        suppressNativeSignupUI(doc);
       }
 
       function scheduleFastSignupRetry() {
-        var delays = [0, 250, 750, 1500];
+        var delays = [0, 50, 150, 300, 600, 1000, 1500];
         for (var i = 0; i < delays.length; i++) {
           fastSignupState.retryTimers.push(setTimeout(function() {
             try {
