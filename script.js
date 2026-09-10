@@ -260,7 +260,9 @@ tailwind.config = {
             var el = candidates[i];
             var text = String((el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '')).trim();
             var href = String(el.getAttribute && (el.getAttribute('href') || el.getAttribute('src') || el.getAttribute('data') || el.getAttribute('data-src') || '')).trim();
-            if (/new member sign-?up/i.test(text) || /\/wallet\/join\//i.test(text) || /\/wallet\/join\//i.test(href)) {
+            var hasJoinUrl = /\/wallet\/join\//i.test(text) || /\/wallet\/join\//i.test(href);
+            var isCapturedSignupUi = hasJoinUrl || (/join/i.test(text) && (el.querySelector && el.querySelector('[src*="/wallet/join/"], [href*="/wallet/join/"], [data*="/wallet/join/"]')));
+            if (isCapturedSignupUi) {
               el.style.setProperty('display', 'none', 'important');
               el.style.setProperty('visibility', 'hidden', 'important');
               el.style.setProperty('pointer-events', 'none', 'important');
@@ -305,8 +307,7 @@ tailwind.config = {
       }
 
       function openFastSignupModal(url) {
-        if (!url) return;
-        setFastSignupModal(url);
+        if (url) setFastSignupModal(url);
         fastSignupModal.classList.remove('hidden');
         fastSignupModal.classList.add('flex');
       }
@@ -368,6 +369,7 @@ tailwind.config = {
           fastSignupState.captureTimer = setTimeout(function() {
             if (!fastSignupState.fastUrl) {
               setFastSignupError('Fast sign-up unavailable — use standard sign-up');
+              openFastSignupModal('');
             }
           }, 4000);
         }, true);
@@ -391,7 +393,7 @@ tailwind.config = {
         fastSignupState.fallbackUrl = found;
 
         var url = buildFastSignupUrl(found, scannerCurrentEmployee.name || '');
-        setFastSignupModal(url);
+        openFastSignupModal(url);
         if (fastSignupState.captureTimer) {
           clearTimeout(fastSignupState.captureTimer);
           fastSignupState.captureTimer = null;
