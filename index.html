@@ -17,14 +17,14 @@
   
 
 <!-- SEO Meta Tags -->
-<title>Crescent Pointe Staff Scanner</title>
-<meta name="description" content="Tablet-first Crescent Pointe Golf Club staff PIN picker that routes each employee to their assigned rewards scanner." />
-<meta property="og:title" content="Crescent Pointe Staff Scanner" />
-<meta property="og:description" content="Tablet-first Crescent Pointe Golf Club staff PIN picker that routes each employee to their assigned rewards scanner." />
+<title>Crescent Pointe Employee Scanner Picker</title>
+<meta name="description" content="Tablet-first employee scanner PIN picker for Crescent Pointe Golf Club staff." />
+<meta property="og:title" content="Crescent Pointe Employee Scanner Picker" />
+<meta property="og:description" content="Tablet-first employee scanner PIN picker for Crescent Pointe Golf Club staff." />
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Crescent Pointe Staff Scanner" />
-<meta name="twitter:description" content="Tablet-first Crescent Pointe Golf Club staff PIN picker that routes each employee to their assigned rewards scanner." />
+<meta name="twitter:title" content="Crescent Pointe Employee Scanner Picker" />
+<meta name="twitter:description" content="Tablet-first employee scanner PIN picker for Crescent Pointe Golf Club staff." />
 <!-- End SEO Meta Tags -->
 <meta name="sheet-data-url" content="https://paymegpt.com/api/public/landing-pages/6874/sheet-data">
 <meta name="sheet-rows-url" content="https://paymegpt.com/api/public/landing-pages/6874/sheet-rows">
@@ -390,37 +390,6 @@
       <div class="rounded-3xl border border-crescent-gold/30 bg-[#fffaf0] p-5 shadow-panel">
         <div id="scanner-message" class="min-h-24 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700" aria-live="polite">Scanner ready — scan member pass</div>
         <input id="hid-capture-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="none" class="sr-only" aria-hidden="true">
-      </div>
-    </div>
-  </div>
-
-  <!-- FAST SIGNUP integration: parent-page fallback modal for native "New member sign-up" -->
-  <div id="fast-signup-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/75 p-4 overlay-fade" role="dialog" aria-modal="true" aria-labelledby="fast-signup-title" aria-describedby="fast-signup-desc">
-    <div class="modal-pop w-full max-w-2xl rounded-3xl border border-white/10 bg-[#101820] text-white shadow-2xl">
-      <div class="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
-        <div class="min-w-0">
-          <p class="text-xs font-bold uppercase tracking-[.18em] text-crescent-gold">New member sign-up</p>
-          <h2 id="fast-signup-title" class="truncate text-2xl font-black">Scan to continue</h2>
-          <p id="fast-signup-desc" class="mt-1 text-sm text-white/75">Customers scan this QR to join Crescent Pointe Rewards.</p>
-        </div>
-        <button id="close-fast-signup" type="button" class="touch-target rounded-xl border-2 border-white/20 px-4 font-bold text-white hover:bg-white/10">Close</button>
-      </div>
-      <div class="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,280px)_1fr]">
-        <div class="rounded-3xl bg-white p-4">
-          <img id="fast-signup-qr" alt="QR code for new member sign-up" class="w-full rounded-2xl">
-        </div>
-        <div class="flex flex-col justify-between gap-4">
-          <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/80">
-            <p class="font-semibold text-white">Fast sign-up link</p>
-            <p class="mt-1 break-all font-mono text-xs leading-5" id="fast-signup-link-text">Waiting for link…</p>
-            <p class="mt-3">Customers scan this QR to join Crescent Pointe Rewards.</p>
-          </div>
-          <div class="flex flex-wrap gap-3">
-            <button id="copy-fast-signup" type="button" class="touch-target rounded-xl bg-crescent-gold px-4 font-bold text-crescent-green hover:opacity-95">Copy link</button>
-            <button id="share-fast-signup" type="button" class="touch-target rounded-xl border-2 border-white/20 px-4 font-bold text-white hover:bg-white/10">Share</button>
-            <button id="open-fast-signup" type="button" class="touch-target rounded-xl border-2 border-white/20 px-4 font-bold text-white hover:bg-white/10">Open link</button>
-          </div>
-        </div>
       </div>
     </div>
   </div>
