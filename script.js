@@ -31,12 +31,20 @@ tailwind.config = {
       var startScannerButton = document.getElementById('start-scanner');
       var switchEmployeeButton = document.getElementById('switch-employee');
       var hidCaptureInput = document.getElementById('hid-capture-input');
+      var fastSignupModal = document.getElementById('fast-signup-modal');
+      var fastSignupQr = document.getElementById('fast-signup-qr');
+      var fastSignupLinkText = document.getElementById('fast-signup-link-text');
+      var closeFastSignupButton = document.getElementById('close-fast-signup');
+      var copyFastSignupButton = document.getElementById('copy-fast-signup');
+      var shareFastSignupButton = document.getElementById('share-fast-signup');
+      var openFastSignupButton = document.getElementById('open-fast-signup');
       var scannerBuffer = '';
       var scannerBufferTimer = null;
       var scannerBusy = false;
       var scannerLastValue = '';
       var scannerLastAt = 0;
       var scannerCurrentEmployee = null;
+      var fastSignupState = { nativeJoinUrl: '', fastUrl: '', employeeName: '', handler: null, observedDoc: null, retryTimers: [] };
 
       var rosterGrid = document.getElementById('roster-grid');
       var loadingState = document.getElementById('loading-state');
@@ -76,6 +84,7 @@ tailwind.config = {
       }
 
       function openModal(employee) {
+        navigating = false;
         selectedEmployee = employee;
         pinTitle.textContent = employee.name;
         resetPinUI();
@@ -146,22 +155,131 @@ tailwind.config = {
         scannerWorkspace.classList.add('flex');
         setScannerStatus('Scanner ready — scan member pass');
         resetScannerState(true);
+        clearFastSignupState();
         loadScannerIframe(employee.scannerLink);
         armHidCapture();
       }
 
       function closeScannerWorkspace() {
+        navigating = false;
+        resetPinUI();
         scannerWorkspace.classList.add('hidden');
         scannerWorkspace.classList.remove('flex');
         resetScannerState(false);
         disarmHidCapture();
+        clearFastSignupState();
         selectedEmployee = null;
         scannerCurrentEmployee = null;
+        scannerIframe.src = 'about:blank';
         setScannerStatus('Scanner ready — scan member pass');
       }
 
       function loadScannerIframe(url) {
         scannerIframe.src = url;
+      }
+
+      // FAST SIGNUP integration helpers — reversible rollback point.
+      function clearFastSignupState() {
+        if (fastSignupState.handler && fastSignupState.observedDoc) {
+          try { fastSignupState.observedDoc.removeEventListener('click', fastSignupState.handler, true); } catch (e) {}
+        }
+        for (var i = 0; i < fastSignupState.retryTimers.length; i++) clearTimeout(fastSignupState.retryTimers[i]);
+        fastSignupState.nativeJoinUrl = '';
+        fastSignupState.fastUrl = '';
+        fastSignupState.employeeName = '';
+        fastSignupState.handler = null;
+        fastSignupState.observedDoc = null;
+        fastSignupState.retryTimers = [];
+        if (fastSignupQr) fastSignupQr.removeAttribute('src');
+        if (fastSignupLinkText) fastSignupLinkText.textContent = 'Waiting for link…';
+      }
+
+      function decodeHtmlEntities(str) {
+        var ta = document.createElement('textarea');
+        ta.innerHTML = str || '';
+        return ta.value;
+      }
+
+      function findNativeJoinUrlInDoc(doc) {
+        if (!doc) return '';
+        var html = decodeHtmlEntities(doc.documentElement ? doc.documentElement.outerHTML : '');
+        var match = html.match(/https?:\/\/[^"'\\s<>]*\/wallet\/join\/[^"'\\s<>]*/i) || html.match(/\/wallet\/join\/[^"'\\s<>]*/i);
+        return match ? match[0] : '';
+      }
+
+      function extractEmpParam(url) {
+        try {
+          return new URL(url, window.location.href).searchParams.get('emp') || '';
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function buildFastSignupUrl(nativeJoinUrl, employeeName) {
+        var emp = extractEmpParam(nativeJoinUrl);
+        var fast = new URL('https://paymegpt.com/p/Zj5yfEy');
+        if (emp) fast.searchParams.set('emp', emp);
+        if (employeeName) fast.searchParams.set('employee', employeeName);
+        fast.searchParams.set('native', nativeJoinUrl);
+        return fast.toString();
+      }
+
+      function setFastSignupModal(url) {
+        if (!url) return;
+        if (fastSignupLinkText) fastSignupLinkText.textContent = url;
+        if (fastSignupQr) fastSignupQr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=12&data=' + encodeURIComponent(url);
+      }
+
+      function openFastSignupModal(url) {
+        if (!url) return;
+        setFastSignupModal(url);
+        fastSignupModal.classList.remove('hidden');
+        fastSignupModal.classList.add('flex');
+      }
+
+      function closeFastSignupModal() {
+        fastSignupModal.classList.add('hidden');
+        fastSignupModal.classList.remove('flex');
+      }
+
+      function tryInstallFastSignupInterceptor(doc) {
+        if (!doc || doc === fastSignupState.observedDoc) {
+          if (fastSignupState.fastUrl) return;
+        }
+        var nativeJoinUrl = findNativeJoinUrlInDoc(doc);
+        if (!nativeJoinUrl) return;
+        var fastUrl = buildFastSignupUrl(nativeJoinUrl, scannerCurrentEmployee ? scannerCurrentEmployee.name : '');
+        fastSignupState.nativeJoinUrl = nativeJoinUrl;
+        fastSignupState.fastUrl = fastUrl;
+        fastSignupState.employeeName = scannerCurrentEmployee ? scannerCurrentEmployee.name : '';
+        fastSignupState.observedDoc = doc;
+        setFastSignupModal(fastUrl);
+
+        if (fastSignupState.handler) {
+          try { doc.removeEventListener('click', fastSignupState.handler, true); } catch (e) {}
+        }
+        fastSignupState.handler = function(e) {
+          var target = e.target && e.target.closest ? e.target.closest('button, a, [role="button"]') : null;
+          if (!target) return;
+          var label = String((target.textContent || target.innerText || target.value || '')).trim();
+          if (!/new member sign-?up/i.test(label) && !/new member signup/i.test(label)) return;
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          openFastSignupModal(fastUrl);
+        };
+        doc.addEventListener('click', fastSignupState.handler, true);
+      }
+
+      function scheduleFastSignupRetry() {
+        var delays = [0, 250, 750, 1500];
+        for (var i = 0; i < delays.length; i++) {
+          fastSignupState.retryTimers.push(setTimeout(function() {
+            try {
+              var doc = scannerIframe.contentDocument;
+              tryInstallFastSignupInterceptor(doc);
+            } catch (e) {}
+          }, delays[i]));
+        }
       }
 
       function renderRoster() {
@@ -525,6 +643,25 @@ tailwind.config = {
         armHidCapture();
         setScannerStatus('Scanner ready — scan member pass');
       });
+      closeFastSignupButton.addEventListener('click', closeFastSignupModal);
+      fastSignupModal.addEventListener('click', function(e) {
+        if (e.target === fastSignupModal) closeFastSignupModal();
+      });
+      copyFastSignupButton.addEventListener('click', function() {
+        if (!fastSignupState.fastUrl) return;
+        navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(fastSignupState.fastUrl) : null;
+      });
+      shareFastSignupButton.addEventListener('click', function() {
+        if (!fastSignupState.fastUrl) return;
+        if (navigator.share) {
+          navigator.share({ title: 'New member sign-up', url: fastSignupState.fastUrl }).catch(function() {});
+        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(fastSignupState.fastUrl);
+        }
+      });
+      openFastSignupButton.addEventListener('click', function() {
+        if (fastSignupState.fastUrl) window.open(fastSignupState.fastUrl, '_blank', 'noopener,noreferrer');
+      });
       switchEmployeeButton.addEventListener('click', function() {
         closeScannerWorkspace();
         loadRoster();
@@ -539,6 +676,8 @@ tailwind.config = {
             doc.head && doc.head.appendChild(style);
           }
         } catch (e) {}
+        clearFastSignupState();
+        scheduleFastSignupRetry();
         armHidCapture();
         setScannerStatus('Scanner ready — scan member pass');
       });
@@ -549,6 +688,7 @@ tailwind.config = {
         stopLockoutTimers();
         closeModal();
         closeScannerWorkspace();
+        closeFastSignupModal();
         clearPin();
         loadRoster();
       });
