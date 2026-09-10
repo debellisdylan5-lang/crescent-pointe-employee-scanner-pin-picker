@@ -44,7 +44,7 @@ tailwind.config = {
       var scannerLastValue = '';
       var scannerLastAt = 0;
       var scannerCurrentEmployee = null;
-      var fastSignupState = { nativeJoinUrl: '', fastUrl: '', employeeName: '', handler: null, observedDoc: null, retryTimers: [], mutationObserver: null, installTimer: null, nativeModalSuppressed: false };
+      var fastSignupState = { fastUrl: '', employeeName: '', handler: null, observedDoc: null, retryTimers: [], mutationObserver: null, installTimer: null, installedButton: null };
 
       var rosterGrid = document.getElementById('roster-grid');
       var loadingState = document.getElementById('loading-state');
@@ -193,14 +193,13 @@ tailwind.config = {
           fastSignupState.installTimer = null;
         }
         for (var i = 0; i < fastSignupState.retryTimers.length; i++) clearTimeout(fastSignupState.retryTimers[i]);
-        fastSignupState.nativeJoinUrl = '';
         fastSignupState.fastUrl = '';
         fastSignupState.employeeName = '';
         fastSignupState.handler = null;
         fastSignupState.observedDoc = null;
         fastSignupState.retryTimers = [];
         fastSignupState.mutationObserver = null;
-        fastSignupState.nativeModalSuppressed = false;
+        fastSignupState.installedButton = null;
         if (fastSignupQr) fastSignupQr.removeAttribute('src');
         if (fastSignupLinkText) fastSignupLinkText.textContent = 'Waiting for link…';
       }
@@ -262,20 +261,9 @@ tailwind.config = {
         } catch (e) {}
       }
 
-      function extractEmpParam(url) {
-        try {
-          return new URL(url, window.location.href).searchParams.get('emp') || '';
-        } catch (e) {
-          return '';
-        }
-      }
-
-      function buildFastSignupUrl(nativeJoinUrl, employeeName) {
-        var emp = extractEmpParam(nativeJoinUrl);
+      function buildFastSignupUrl(employeeName) {
         var fast = new URL('https://paymegpt.com/p/Zj5yfEy');
-        if (emp) fast.searchParams.set('emp', emp);
         if (employeeName) fast.searchParams.set('employee', employeeName);
-        fast.searchParams.set('native', nativeJoinUrl);
         return fast.toString();
       }
 
@@ -293,7 +281,6 @@ tailwind.config = {
       function openFastSignupModal(url) {
         if (!url) return;
         setFastSignupModal(url);
-        fastSignupState.nativeModalSuppressed = true;
         fastSignupModal.classList.remove('hidden');
         fastSignupModal.classList.add('flex');
       }
@@ -304,109 +291,93 @@ tailwind.config = {
       }
 
       function tryInstallFastSignupInterceptor(doc) {
-        if (!doc || fastSignupState.fastUrl && fastSignupState.observedDoc === doc) return;
-        if (!doc.body || !doc.documentElement) return;
+        if (!doc || !scannerCurrentEmployee) return false;
+        if (!doc.body || !doc.documentElement) return false;
 
-        if (fastSignupState.mutationObserver) {
-          try { fastSignupState.mutationObserver.disconnect(); } catch (e) {}
-        }
-
-        fastSignupState.observedDoc = doc;
-
-        function discoverAndOpen(reason) {
-          var nativeJoinUrl = findNativeJoinUrlInDoc(doc);
-          if (!nativeJoinUrl) return false;
-          var fastUrl = buildFastSignupUrl(nativeJoinUrl, scannerCurrentEmployee ? scannerCurrentEmployee.name : '');
-          fastSignupState.nativeJoinUrl = nativeJoinUrl;
-          fastSignupState.fastUrl = fastUrl;
-          fastSignupState.employeeName = scannerCurrentEmployee ? scannerCurrentEmployee.name : '';
-          suppressNativeSignupUI(doc);
-          setFastSignupModal(fastUrl);
-          openFastSignupModal(fastUrl);
-          return true;
-        }
-
-        if (fastSignupState.handler) {
-          try { doc.removeEventListener('click', fastSignupState.handler, true); } catch (e) {}
-          try { doc.removeEventListener('pointerdown', fastSignupState.handler, true); } catch (e) {}
-          try { doc.removeEventListener('touchstart', fastSignupState.handler, true); } catch (e) {}
-        }
-
-        fastSignupState.handler = function(e) {
-          var target = e.target && e.target.closest ? e.target.closest('button, a, [role="button"], [aria-label], [title]') : null;
-          if (!target) return;
-          var label = String((target.textContent || target.innerText || target.value || target.getAttribute('aria-label') || target.getAttribute('title') || '')).trim();
-          if (!/new member sign-?up/i.test(label) && !/new member signup/i.test(label)) return;
-          var activated = /^(pointerdown|touchstart|click)$/i.test(e.type);
-          if (!activated) return;
-          e.stopImmediatePropagation();
-          if (e.type !== 'click') {
-            e.preventDefault();
+        if (fastSignupState.observedDoc !== doc) {
+          if (fastSignupState.mutationObserver) {
+            try { fastSignupState.mutationObserver.disconnect(); } catch (e) {}
           }
-          var delays = [50, 150, 300, 600, 1000, 1500];
-          for (var i = 0; i < delays.length; i++) {
-            (function(delay) {
-              fastSignupState.retryTimers.push(setTimeout(function() {
-                if (discoverAndOpen('retry-' + delay)) return;
-              }, delay));
-            })(delays[i]);
-          }
-        };
-
-        doc.addEventListener('click', fastSignupState.handler, true);
-        doc.addEventListener('pointerdown', fastSignupState.handler, true);
-        doc.addEventListener('touchstart', fastSignupState.handler, true);
-
-        fastSignupState.mutationObserver = new MutationObserver(function(mutations) {
-          if (fastSignupState.nativeModalSuppressed) suppressNativeSignupUI(doc);
-          for (var i = 0; i < mutations.length; i++) {
-            var m = mutations[i];
-            if (m.type === 'childList') {
-              for (var j = 0; j < m.addedNodes.length; j++) {
-                var url = findNativeJoinUrlInNode(m.addedNodes[j]);
-                if (url) {
-                  fastSignupState.nativeJoinUrl = url;
-                  discoverAndOpen('mutation-child');
-                  return;
-                }
-              }
-            } else if (m.type === 'attributes') {
-              var attrUrl = findNativeJoinUrlInNode(m.target);
-              if (attrUrl) {
-                fastSignupState.nativeJoinUrl = attrUrl;
-                discoverAndOpen('mutation-attr');
-                return;
-              }
-            } else if (m.type === 'characterData') {
-              var textUrl = findNativeJoinUrlInNode(m.target);
-              if (textUrl) {
-                fastSignupState.nativeJoinUrl = textUrl;
-                discoverAndOpen('mutation-text');
-                return;
-              }
-            }
-          }
-          if (doc.querySelector('[href*="/wallet/join/"], [src*="/wallet/join/"], [data*="/wallet/join/"]')) {
-            discoverAndOpen('mutation-scan');
-          }
-        });
-
-        try {
-          fastSignupState.mutationObserver.observe(doc.documentElement, {
-            subtree: true,
-            childList: true,
-            attributes: true,
-            characterData: true,
-            attributeFilter: ['href', 'src', 'data', 'data-src', 'style', 'aria-label', 'title']
+          fastSignupState.observedDoc = doc;
+          fastSignupState.mutationObserver = new MutationObserver(function() {
+            installFastSignupOverride(doc);
           });
-        } catch (e) {}
+          try {
+            fastSignupState.mutationObserver.observe(doc.documentElement, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+              characterData: true,
+              attributeFilter: ['class', 'style', 'aria-label', 'title']
+            });
+          } catch (e) {}
+        }
 
-        discoverAndOpen('initial');
-        suppressNativeSignupUI(doc);
+        return installFastSignupOverride(doc);
+      }
+
+      function installFastSignupOverride(doc) {
+        if (!doc || !scannerCurrentEmployee) return false;
+        var employeeName = scannerCurrentEmployee.name || '';
+        var labelMatch = /new member sign-?up|new member signup/i;
+
+        var candidates = Array.prototype.slice.call(doc.querySelectorAll('button, a, [role="button"], [aria-label], [title]'));
+        var target = null;
+        for (var i = 0; i < candidates.length; i++) {
+          var el = candidates[i];
+          var text = String((el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '')).trim();
+          if (!labelMatch.test(text)) continue;
+          var style = doc.defaultView && doc.defaultView.getComputedStyle ? doc.defaultView.getComputedStyle(el) : null;
+          var visible = el.offsetParent !== null || (style && style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0);
+          if (visible) { target = el; break; }
+        }
+        if (!target) return false;
+
+        if (fastSignupState.installedButton && fastSignupState.installedButton.isConnected) {
+          var existingText = String((fastSignupState.installedButton.textContent || fastSignupState.installedButton.innerText || '')).trim();
+          if (labelMatch.test(existingText)) return true;
+        }
+
+        var clone = target.cloneNode(true);
+        clone.removeAttribute('onclick');
+        clone.removeAttribute('onmousedown');
+        clone.removeAttribute('onpointerdown');
+        clone.removeAttribute('ontouchstart');
+        clone.removeAttribute('onmouseup');
+        clone.removeAttribute('onmouseenter');
+        clone.removeAttribute('onmouseleave');
+        clone.textContent = 'New member sign-up';
+
+        var replacement = clone;
+        if (target.tagName === 'A') {
+          replacement = clone;
+          replacement.setAttribute('href', 'javascript:void(0)');
+        } else if (target.tagName === 'BUTTON') {
+          replacement = clone;
+          replacement.type = 'button';
+        }
+
+        replacement.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          var url = buildFastSignupUrl(employeeName);
+          fastSignupState.fastUrl = url;
+          fastSignupState.employeeName = employeeName;
+          openFastSignupModal(url);
+        }, true);
+
+        target.parentNode.replaceChild(replacement, target);
+        fastSignupState.installedButton = replacement;
+        var url = buildFastSignupUrl(employeeName);
+        fastSignupState.fastUrl = url;
+        fastSignupState.employeeName = employeeName;
+        setFastSignupModal(url);
+        console.log('Fast signup button installed for ' + employeeName);
+        return true;
       }
 
       function scheduleFastSignupRetry() {
-        var delays = [0, 50, 150, 300, 600, 1000, 1500];
+        var delays = [0, 100, 300, 700, 1500, 2500];
         for (var i = 0; i < delays.length; i++) {
           fastSignupState.retryTimers.push(setTimeout(function() {
             try {
